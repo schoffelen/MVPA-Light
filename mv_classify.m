@@ -221,7 +221,7 @@ end
 %% check neighbours parameters
 has_neighbours = ~isempty(cfg.neighbours);
 assert(~(has_neighbours && (numel(cfg.neighbours) ~= numel(search_dim))), 'If any neighbourhood matrix is given, you must specify a matrix for every search dimension')
-assert(~(has_neighbours && numel(gen_dim)>0), 'Searchlight and generalization are currently not supported simultaneously')
+%assert(~(has_neighbours && numel(gen_dim)>0), 'Searchlight and generalization are currently not supported simultaneously')
 
 %% order the dimensions by samples -> search dimensions -> features
 
@@ -390,10 +390,12 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
                     ix_nb = cellfun( @(N,f) find(N(f,:)), cfg.neighbours, ix, 'Un',0);
                     % train data
                     X_ix = Xtrain(sample_skip{:}, ix_nb{:}, feature_skip{:});
-                    X_ix = reshape(X_ix, [sz_Xtrain(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
+                    %X_ix = reshape(X_ix, [sz_Xtrain(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
+                    X_ix = reshape(X_ix, [sz_Xtrain(sample_dim), numel(X_ix)./prod(sz_Xtrain(sample_dim))]);
                     % test data
                     Xtest_ix = squeeze1(Xtest(sample_skip{:}, ix_nb{:}, feature_skip{:}));
-                    Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
+                    %Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
+                    Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), numel(Xtest_ix)./prod(sz_Xtest(sample_dim))]);
                 elseif cfg.append
                     % search dimensions are appended to train data
                     X_ix = Xtrain;
@@ -450,11 +452,34 @@ elseif has_second_dataset
     trainlabel = clabel;
     testlabel = clabel2;
     
-    if ~isempty(gen_dim)
+    if ~isempty(gen_dim) && ~has_neighbours
         Xtest = permute(Xtest, [sample_dim, search_dim(end), search_dim(1:end-1), feature_dim]);
         % reshape samples x gen dim into one dimension
         new_sz_search = size(Xtest);
         Xtest = reshape(Xtest, [new_sz_search(1)*new_sz_search(2), new_sz_search(3:end)]);
+    elseif ~isempty(gen_dim) && has_neighbours
+        % this requires an additional for-loop when requesting the classifier's output, not reshaping here
+        % pre-run the dim_loop to identify the search points that can generalize from training to testing, 
+        % given the matching number of features
+        for ix = 1:numel(dim_loop)
+            ix_nb(ix,:) = cellfun( @(N,f) find(N(f,:)), cfg.neighbours, dim_loop(ix), 'Un',0);
+        end
+        n_nb  = cellfun( @numel, ix_nb);
+        ok_nb = true(numel(dim_loop), 1);
+        for ix = 1:numel(search_dim)
+            ok_nb =  ok_nb & n_nb(:,ix)==mode(n_nb(:,ix)); % the heuristic here is that there's a majority vote
+        end
+        n_nb     = n_nb(ok_nb);
+        ix_nb    = ix_nb(ok_nb,:);
+        dim_loop = dim_loop(ok_nb);
+
+        % pre create the (nsamplesxnsearch) x nfeatures test matrix
+        sz_Xtest = size(Xtest);
+        Xtest_ix = zeros([sz_Xtest(sample_dim)*numel(dim_loop) prod(n_nb(1,:)).*prod(sz_Xtest(feature_dim))]);
+        for ix = 1:numel(dim_loop)
+            ix_sub = (ix-1).*sz_Xtest(sample_dim) + (1:sz_Xtest(sample_dim));
+            Xtest_ix(ix_sub,:) = reshape(Xtest(sample_skip{:}, ix_nb{ix, :}, feature_skip{:}), sz_Xtest(sample_dim), []);
+        end
     end
     
     % Remember sizes
@@ -467,9 +492,11 @@ elseif has_second_dataset
         if has_neighbours && ~cfg.append
             ix_nb = cellfun( @(N,f) find(N(f,:)), cfg.neighbours, ix, 'Un',0);
             X_ix = Xtrain(sample_skip{:}, ix_nb{:}, feature_skip{:});
-            X_ix = reshape(X_ix, [sz_Xtrain(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
-            Xtest_ix = squeeze1(Xtest(sample_skip{:}, ix_nb{:}, feature_skip{:}));
-            Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
+            X_ix = reshape(X_ix, [sz_Xtrain(sample_dim), numel(X_ix)./prod(sz_Xtrain(sample_dim))]);
+            if isempty(gen_dim)
+                Xtest_ix = squeeze1(Xtest(sample_skip{:}, ix_nb{:}, feature_skip{:}));
+                Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), numel(Xtest_ix)./prod(sz_Xtest(sample_dim))]);
+            end
         elseif cfg.append
             % search dimensions are appended to train data
             X_ix = Xtrain;
@@ -488,7 +515,7 @@ elseif has_second_dataset
         % Obtain classifier output (labels, dvals or probabilities)
         if isempty(gen_dim)
             cf_output{1,1,ix{:}} = mv_get_classifier_output(cfg.output_type, cf, test_fun, Xtest_ix);
-        else
+        elseif ~isempty(gen_dim)
             cf_output{1,1,ix{:}} = reshape( mv_get_classifier_output(cfg.output_type, cf, test_fun, Xtest_ix), numel(testlabel),[]);
         end
         if save_model, all_model{ix{:}} = cf; end
