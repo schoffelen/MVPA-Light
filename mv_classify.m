@@ -236,6 +236,11 @@ end
 % permute X and dimension names
 new_dim_order = [sample_dim, search_dim, feature_dim];
 X = permute(X, new_dim_order);
+if has_neighbours
+    % order of neighbours might need to be changed for consistency
+    [~,reorder] = sort(new_dim_order(2:(1+numel(search_dim))));
+    cfg.neighbours = cfg.neighbours(reorder);
+end
 if has_second_dataset, X2 = permute(X2, new_dim_order); end
 cfg.dimension_names = cfg.dimension_names(new_dim_order);
 
