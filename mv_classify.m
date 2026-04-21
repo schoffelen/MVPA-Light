@@ -361,7 +361,7 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
                 [~, Xtest, testlabel{rr,kk}] = mv_preprocess(tmp_cfg, Xtest, testlabel{rr,kk});
             end
             
-            if ~isempty(gen_dim)
+            if ~isempty(gen_dim) && ~has_neighbours
                 % ---- Generalization ---- (eg time x time)
                 % Instead of looping through the generalization dimension,
                 % which would require an additional loop, we reshape the test
@@ -376,6 +376,31 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
                 % reshape samples x gen dim into one dimension
                 new_sz_search = size(Xtest);
                 Xtest = reshape(Xtest, [new_sz_search(1)*new_sz_search(2), new_sz_search(3:end)]);
+            elseif ~isempty(gen_dim) && has_neighbours
+                % this may require an additional for-loop when requesting the classifier's output,
+                % pre-run the dim_loop to identify the search points that can generalize from training to testing,
+                % given the matching number of features, and keep track of the neighbours for convenience
+                for iy = 1:size(dim_loop,2)
+                    iy_nb(iy,:) = cellfun( @(N,f) find(N(f,:)), cfg.neighbours, dim_loop(:,iy), 'Un',0);
+                end
+                n_nb  = cellfun( @numel, iy_nb);
+                ix    = find(search_dim==gen_dim);
+                ok_nb =  n_nb(:,ix)==mode(n_nb(:,ix)); % the heuristic here is that there's a majority vote
+
+                n_nb     = n_nb(ok_nb,:);
+                iy_nb    = iy_nb(ok_nb,:);
+                dim_loop = dim_loop(:,ok_nb);
+                dim_loop_mat = dim_loop_mat(:,ok_nb);
+
+                % pre create the (nsamplesxnsearch) x nfeatures test matrix, this can be done without nested for-loops if there's a single search dimension
+                if size(dim_loop,1)==1
+                    sz_Xtest = size(Xtest);
+                    Xtest_ix = zeros([sz_Xtest(sample_dim)*size(dim_loop,2) prod(n_nb(1,:)).*prod(sz_Xtest(feature_dim))]);
+                    for ix = 1:size(dim_loop,2)
+                        ix_sub = (ix-1).*sz_Xtest(sample_dim) + (1:sz_Xtest(sample_dim));
+                        Xtest_ix(ix_sub,:) = reshape(Xtest(sample_skip{:}, iy_nb{ix, :}, feature_skip{:}), sz_Xtest(sample_dim), []);
+                    end
+                end
             end
             if save_trainlabel, all_trainlabel{rr,kk} = trainlabel; end
 
@@ -391,12 +416,24 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
                     ix_nb = cellfun( @(N,f) find(N(f,:)), cfg.neighbours, ix, 'Un',0);
                     % train data
                     X_ix = Xtrain(sample_skip{:}, ix_nb{:}, feature_skip{:});
-                    %X_ix = reshape(X_ix, [sz_Xtrain(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
                     X_ix = reshape(X_ix, [sz_Xtrain(sample_dim), numel(X_ix)./prod(sz_Xtrain(sample_dim))]);
                     % test data
-                    Xtest_ix = squeeze1(Xtest(sample_skip{:}, ix_nb{:}, feature_skip{:}));
-                    %Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
-                    Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), numel(Xtest_ix)./prod(sz_Xtest(sample_dim))]);
+                    if isempty(gen_dim)
+                        Xtest_ix = squeeze1(Xtest(sample_skip{:}, ix_nb{:}, feature_skip{:}));
+                        Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), numel(Xtest_ix)./prod(sz_Xtest(sample_dim))]);
+                    elseif ~isempty(gen_dim) && size(dim_loop,1)>1
+                        % pre create the (nsamplesxnsearch) x nfeatures test matrix, this needs a nested for-loop
+                        selection = sum(dim_loop_mat(search_dim~=gen_dim,:)==repmat(cell2mat(ix(search_dim~=gen_dim)),[1 size(dim_loop,2)]),1)>0;
+                        iy_nb_sel = iy_nb(selection,:)';
+                        nnb       = prod(cellfun(@numel,iy_nb_sel(:,1)));
+
+                        Xtest_ix = zeros([sz_Xtest(sample_dim)*sum(selection) nnb.*prod(sz_Xtest(feature_dim))]);
+                        offset = 0;
+                        for iy = iy_nb_sel
+                            Xtest_ix(offset + (1:sz_Xtest(sample_dim)), :) = reshape(Xtest(sample_skip{:}, iy{:}, feature_skip{:}), sz_Xtest(sample_dim), []);
+                            offset = offset + sz_Xtest(sample_dim);
+                        end
+                    end
                 elseif cfg.append
                     % search dimensions are appended to train data
                     X_ix = Xtrain;
@@ -420,6 +457,7 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
                     cf_output{rr,kk,ix{:}} = reshape( mv_get_classifier_output(cfg.output_type, cf, test_fun, Xtest_ix), numel(testlabel{rr,kk}),[]);
                 end
                 if save_model, all_model{rr,kk,ix{:}} = cf; end
+               
             end
 
         end
@@ -476,12 +514,12 @@ elseif has_second_dataset
 
         % pre create the (nsamplesxnsearch) x nfeatures test matrix, this can be done without nested for-loops if there's a single search dimension
         if size(dim_loop,1)==1
-          sz_Xtest = size(Xtest);
-          Xtest_ix = zeros([sz_Xtest(sample_dim)*size(dim_loop,2) prod(n_nb(1,:)).*prod(sz_Xtest(feature_dim))]);
-          for ix = 1:size(dim_loop,2)
-            ix_sub = (ix-1).*sz_Xtest(sample_dim) + (1:sz_Xtest(sample_dim));
-            Xtest_ix(ix_sub,:) = reshape(Xtest(sample_skip{:}, iy_nb{ix, :}, feature_skip{:}), sz_Xtest(sample_dim), []);
-          end
+            sz_Xtest = size(Xtest);
+            Xtest_ix = zeros([sz_Xtest(sample_dim)*size(dim_loop,2) prod(n_nb(1,:)).*prod(sz_Xtest(feature_dim))]);
+            for ix = 1:size(dim_loop,2)
+                ix_sub = (ix-1).*sz_Xtest(sample_dim) + (1:sz_Xtest(sample_dim));
+                Xtest_ix(ix_sub,:) = reshape(Xtest(sample_skip{:}, iy_nb{ix, :}, feature_skip{:}), sz_Xtest(sample_dim), []);
+            end
         end
     end
     
@@ -508,7 +546,6 @@ elseif has_second_dataset
                 Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), numel(Xtest_ix)./prod(sz_Xtest(sample_dim))]);
             elseif ~isempty(gen_dim) && size(dim_loop,1)>1
                 % pre create the (nsamplesxnsearch) x nfeatures test matrix, this needs a nested for-loop
-                nrep      = numel(unique(dim_loop_mat(search_dim==gen_dim,:))); % number of copies along the generalization dimension
                 selection = sum(dim_loop_mat(search_dim~=gen_dim,:)==repmat(cell2mat(ix(search_dim~=gen_dim)),[1 size(dim_loop,2)]),1)>0;
                 iy_nb_sel = iy_nb(selection,:)';
                 nnb       = prod(cellfun(@numel,iy_nb_sel(:,1)));
@@ -567,12 +604,37 @@ elseif strcmp(cfg.cv,'none')
     end
     if save_model, all_model = cell(size(cf_output)); end
 
-    if ~isempty(gen_dim)
-        Xtest= permute(X, [sample_dim, search_dim(end), search_dim(1:end-1), feature_dim]);
-        
+    if ~isempty(gen_dim) && ~has_neighbours
+        Xtest = permute(X, [sample_dim, search_dim(end), search_dim(1:end-1), feature_dim]);
         % reshape samples x gen dim into one dimension
-        sz_search = size(Xtest);
-        Xtest= reshape(Xtest, [sz_search(1)*sz_search(2), sz_search(3:end)]);
+        new_sz_search = size(Xtest);
+        Xtest = reshape(Xtest, [new_sz_search(1)*new_sz_search(2), new_sz_search(3:end)]);
+    elseif ~isempty(gen_dim) && has_neighbours
+        % this may require an additional for-loop when requesting the classifier's output,
+        % pre-run the dim_loop to identify the search points that can generalize from training to testing, 
+        % given the matching number of features, and keep track of the neighbours for convenience
+        for iy = 1:size(dim_loop,2)
+            iy_nb(iy,:) = cellfun( @(N,f) find(N(f,:)), cfg.neighbours, dim_loop(:,iy), 'Un',0);
+        end
+        n_nb  = cellfun( @numel, iy_nb);
+        ix    = find(search_dim==gen_dim);
+        ok_nb =  n_nb(:,ix)==mode(n_nb(:,ix)); % the heuristic here is that there's a majority vote
+        
+        n_nb     = n_nb(ok_nb,:);
+        iy_nb    = iy_nb(ok_nb,:);
+        dim_loop = dim_loop(:,ok_nb);
+        dim_loop_mat = dim_loop_mat(:,ok_nb);
+
+        % pre create the (nsamplesxnsearch) x nfeatures test matrix, this can be done without nested for-loops if there's a single search dimension
+        if size(dim_loop,1)==1
+            sz_Xtest = size(X);
+            Xtest_ix = zeros([sz_Xtest(sample_dim)*size(dim_loop,2) prod(n_nb(1,:)).*prod(sz_Xtest(feature_dim))]);
+            for ix = 1:size(dim_loop,2)
+                ix_sub = (ix-1).*sz_Xtest(sample_dim) + (1:sz_Xtest(sample_dim));
+                Xtest_ix(ix_sub,:) = reshape(X(sample_skip{:}, iy_nb{ix, :}, feature_skip{:}), sz_Xtest(sample_dim), []);
+            end
+        end
+        Xtest = X;
     else
         Xtest = X;
     end
@@ -591,8 +653,22 @@ elseif strcmp(cfg.cv,'none')
             X_ix = X(sample_skip{:}, ix_nb{:}, feature_skip{:});
             X_ix= reshape(X_ix, [sz_Xtrain(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
             % test data
-            Xtest_ix = squeeze(Xtest(sample_skip{:}, ix_nb{:}, feature_skip{:}));
-            Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), prod(cellfun(@numel, ix_nb)) * nfeat]);
+            if isempty(gen_dim)
+                Xtest_ix = squeeze1(Xtest(sample_skip{:}, ix_nb{:}, feature_skip{:}));
+                Xtest_ix = reshape(Xtest_ix, [sz_Xtest(sample_dim), numel(Xtest_ix)./prod(sz_Xtest(sample_dim))]);
+            elseif ~isempty(gen_dim) && size(dim_loop,1)>1
+                % pre create the (nsamplesxnsearch) x nfeatures test matrix, this needs a nested for-loop
+                selection = sum(dim_loop_mat(search_dim~=gen_dim,:)==repmat(cell2mat(ix(search_dim~=gen_dim)),[1 size(dim_loop,2)]),1)>0;
+                iy_nb_sel = iy_nb(selection,:)';
+                nnb       = prod(cellfun(@numel,iy_nb_sel(:,1)));
+
+                Xtest_ix = zeros([sz_Xtest(sample_dim)*sum(selection) nnb.*prod(sz_Xtest(feature_dim))]);
+                offset = 0;
+                for iy = iy_nb_sel
+                    Xtest_ix(offset + (1:sz_Xtest(sample_dim)), :) = reshape(Xtest(sample_skip{:}, iy{:}, feature_skip{:}), sz_Xtest(sample_dim), []);
+                    offset = offset + sz_Xtest(sample_dim);
+                end
+            end
         elseif cfg.append
             % search dimensions are appended to train data
             X_ix = X;
