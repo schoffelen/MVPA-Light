@@ -279,7 +279,7 @@ switch(metric)
         % https://en.wikipedia.org/wiki/Student%27s_t-test#Equal_or_unequal_sample_sizes.2C_equal_variance
         perf = cell(sz_output);
         
-         % Aggregate across samples, for each class separately
+        % Aggregate across samples, for each class separately
         if nextra == 1
             % Get means
             M1 = cellfun( @(cfo,lab) nanmean(cfo(lab==1,:,:,:,:,:,:,:,:,:),1), model_output, y, 'Un',0);

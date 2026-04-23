@@ -22,13 +22,15 @@ if n_classes==1
 end
 
 if iscell(clabel) || ~all(ismember(clabel,1:n_classes))
-    warning('clabel should be a vector consisting of integers 1 (class 1), 2 (class 2), 3 (class 3) and so on. Relabelling them accordingly.');
+    clabelorig = clabel;
+    warning('clabel should almost always be a vector consisting of integers 1 (class 1), 2 (class 2), 3 (class 3) and so on. Relabelling them accordingly.');
     newlabel = nan(numel(clabel), 1);
     for i = 1:n_classes
         newlabel(ismember(clabel, u(i))) = i; % set to 1:nth classes
     end
     clabel = newlabel;
     if has_second_dataset
+        clabel2orig = clabel2;
         newlabel = nan(numel(clabel2), 1);
         for i = 1:n_classes
             newlabel(ismember(clabel2, u(i))) = i;
@@ -270,3 +272,10 @@ end
 
 %% cfg: set defaults for classifier hyperparameter
 cfg.hyperparameter = mv_get_hyperparameter(cfg.classifier, cfg.hyperparameter);
+if isfield(cfg.hyperparameter, 'relabel_design') && ~cfg.hyperparameter.relabel_design
+    warning('overruling the relabelling of the design, switching back to the original');
+    clabel = clabelorig;
+    if has_second_dataset
+      clabel2 = clabel2orig;
+    end
+end
