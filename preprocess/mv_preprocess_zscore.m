@@ -15,6 +15,8 @@ function [pparam, X, clabel] = mv_preprocess_zscore(pparam, X, clabel)
 % .dimension        - which dimension(s) of the data matrix will be used
 %                     for z-scoring. Typically the dimension representing
 %                     the samples (default 1)
+% .omitnan          - boolean flag to omit nans or not (default 0). If the
+%                     data contains nans, it makes sense to use 1
 %
 % Nested preprocessing: For train data, preprocess_param.mean and 
 % preprocess_param.standard_deviation are calculated
@@ -22,8 +24,13 @@ function [pparam, X, clabel] = mv_preprocess_zscore(pparam, X, clabel)
 % obtained from the train data are used to scale the test data.
 
 if pparam.is_train_set
+  if pparam.omitnan
+    pparam.mean = mean(X, pparam.dimension, 'omitnan');
+    pparam.standard_deviation = std(X, [], pparam.dimension, 'omitnan');    
+  else
     pparam.mean = mean(X, pparam.dimension);
     pparam.standard_deviation = std(X, [], pparam.dimension);    
+  end
 end
 
 % Remove mean from data and divide by standard deviation

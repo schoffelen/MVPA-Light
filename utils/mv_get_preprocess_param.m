@@ -87,6 +87,7 @@ switch(preprocess)
         mv_set_default(preprocess_param,'target_dimension',3);
         mv_set_default(preprocess_param,'normalize',1);
         mv_set_default(preprocess_param,'select_data',[]);
+        mv_set_default(preprocess_param,'omitrows',0);
     
     case 'impute_nan'
         mv_set_default(preprocess_param,'is_train_set',1);
@@ -119,4 +120,5 @@ switch(preprocess)
         mv_set_default(preprocess_param,'is_train_set',1);
         mv_set_default(preprocess_param,'dimension',1);     
         mv_set_default(preprocess_param,'select_data',[]);
+        mv_set_default(preprocess_param,'omitnan',0);
 end
