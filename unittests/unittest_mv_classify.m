@@ -542,3 +542,86 @@ cfg.save = {'model_param' 'trainlabel'};
 cfg.cv = 'none';
 [~, result] = mv_classify(cfg, X, clabel);
 print_unittest_result('[save=model_param, trainlabel, no crossval] misc.result.model_param', [1, 1, ntime], size(result.model_param), tol);
+
+%% ~isempty(gendim) + hasneighbours
+nsamples = 100;
+ntime = 60;
+nchans = 10;
+nclasses = 2;
+prop = [];
+scale = 2;
+do_plot = 0;
+
+% Generate data
+X = zeros(nsamples, nchans, ntime);
+[~,clabel] = simulate_gaussian_data(nsamples, nchans, nclasses, prop, scale, do_plot);
+
+for tt=1:ntime
+    X(:,:,tt) = simulate_gaussian_data(nsamples, nchans, nclasses, prop, scale, do_plot);
+end
+
+nbmat1 = ~(tril(ones(nchans),-3) + triu(ones(nchans),3));
+nbmat2 = ~(tril(ones(ntime),-3) + triu(ones(ntime),3));
+
+% run a searchlight, where each searchlight is a single sample
+cfg = [];
+cfg.feature_dimension = [];
+perf = mv_classify(cfg, X, clabel);
+print_unittest_result('singleton searchlight, output dim', [10 60], size(perf), tol);
+
+% run a spatiotemporal searchlight
+cfg.neighbours = {nbmat1 nbmat2};
+perfnb = mv_classify(cfg, X, clabel);
+print_unittest_result('spatiotemporal searchlight, output dim', [10 60], size(perfnb), tol);
+print_unittest_result('performance spatiotemporal searchlight > singleton searchlight', mean(perfnb(:))-mean(perf(:))>0, true, tol);
+
+% run a searchlight, with time generalization
+cfg = [];
+cfg.feature_dimension = [];
+cfg.generalization_dimension = 3;
+perf3 = mv_classify(cfg, X, clabel);
+print_unittest_result('singleton searchlight + time generalization, output dim', [10 60 60], size(perf3), tol);
+
+% run a spatiotemporal searchlight
+cfg.neighbours = {nbmat1 nbmat2};
+cfg.metric     = {'accuracy' 'recall' 'precision' 'confusion'}; % also get other output metric to catch empty cell related errors there
+
+% cross-decoded spatiotemporal searchlight
+sel1 = [1:25 51:75];
+sel2 = [26:50 76:100];
+perfnb3 = mv_classify(cfg, X(sel1,:,:), clabel(sel1), X(sel2,:,:), clabel(sel2));
+print_unittest_result('spatiotemporal searchlight + time generalization, cross-decoded, output dim', [10 56 56], size(perfnb3{1}), tol);
+
+% cross-validated spatiotemporal searchlight
+perfnb3 = mv_classify(cfg, X, clabel);
+print_unittest_result('spatiotemporal searchlight + time generalization, cross-validated, output dim', [10 56 56], size(perfnb3{1}), tol);
+
+cfg.cv = 'none';
+perfnb3 = mv_classify(cfg, X, clabel);
+print_unittest_result('spatiotemporal searchlight + time generalization, no crossval, output dim', [10 56 56], size(perfnb3{1}), tol);
+
+% run a searchlight, with time generalization
+cfg = [];
+cfg.feature_dimension = [];
+cfg.generalization_dimension = 2;
+perf2 = mv_classify(cfg, X, clabel);
+print_unittest_result('singleton searchlight + time generalization, output dim', [60 10 10], size(perf2), tol);
+
+% run a spatiotemporal searchlight
+cfg.neighbours = {nbmat1 nbmat2};
+cfg.metric     = {'accuracy' 'recall' 'precision' 'confusion'}; % also get other output metric to catch empty cell related errors there
+
+% cross-decoded spatiotemporal searchlight
+sel1 = [1:25 51:75];
+sel2 = [26:50 76:100];
+perfnb2 = mv_classify(cfg, X(sel1,:,:), clabel(sel1), X(sel2,:,:), clabel(sel2));
+print_unittest_result('spatiotemporal searchlight + time generalization, cross-decoded, output dim', [60 6 6], size(perfnb2{1}), tol);
+
+% cross-validated spatiotemporal searchlight
+perfnb2 = mv_classify(cfg, X, clabel);
+print_unittest_result('spatiotemporal searchlight + time generalization, cross-validated, output dim', [60 6 6], size(perfnb2{1}), tol);
+
+cfg.cv = 'none';
+perfnb2 = mv_classify(cfg, X, clabel);
+print_unittest_result('spatiotemporal searchlight + time generalization, no crossval, output dim', [60 6 6], size(perfnb2{1}), tol);
+

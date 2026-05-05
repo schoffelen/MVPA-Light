@@ -121,7 +121,6 @@ switch(metric)
             % create a function that compares the predicted labels to the
             % true labels and takes the mean of the comparison. This gives
             % us the classification performance for each test fold.
-            % fun = @(cfo,lab) sum(bsxfun(@eq,cfo,lab(:)), 1)
             fun = @(cfo,lab) sum(bsxfun(@eq,cfo,lab(:)), 1)./sum(~bsxfun(@eq,cfo,0), 1); % this version is NaN-aware, assuming a label to be 0 when obtained from a sample with NaNs
         elseif strcmp(output_type,'dval')
             % We want class 1 labels to be positive, and class 2 labels to
@@ -147,8 +146,11 @@ switch(metric)
         
         % Looping across the extra dimensions if model_output is multi-dimensional
         for xx=1:nextra
-            % Use cellfun to apply the function defined above to each cell
-            perf(dim_skip_token{:},xx) = cellfun(fun, model_output(dim_skip_token{:},xx), y, 'Un', 0);
+            % Use cellfun to apply the function defined above to each cell, but only if the contents are non-empty
+            this_output = model_output(dim_skip_token{:},xx);
+            if ~any(cellfun(@isempty, this_output))
+                perf(dim_skip_token{:},xx) = cellfun(fun, this_output, y, 'Un', 0);
+            end
         end
         
     case 'auc'
@@ -179,17 +181,20 @@ switch(metric)
             % Sort decision values using the indices of the sorted labels.
             % Add a bunch of :'s to make sure that we preserve the other
             % (possible) dimensions
-            cf_so = cellfun(@(c,so) c(so,:,:,:,:,:,:,:,:,:) , model_output(dim_skip_token{:},xx), soidx, 'Un',0);
-            % Use cellfun to perform the following operation within each
-            % cell:
-            % For each class 1 sample, we count how many class 2 exemplars
-            % have a lower decision value than this sample. If there is a
-            % tie (dvals equal for two exemplars of different classes),
-            % we add 0.5. Dividing that number by the #class 1 x #class 2
-            % (n1*n2) gives the AUC.
-            % We do this by applying the above-defined arrsum to every cell
-            % in model_output and then normalising by (n1*n2)
-            perf(dim_skip_token{:},xx) = cellfun(@(c,n1,n2) arrsum(c,n1)/(n1*n2), cf_so, N1,N2, 'Un',0);
+            this_output = model_output(dim_skip_token{:},xx);
+            if ~any(cellfun(@isempty, this_output))
+                cf_so = cellfun(@(c,so) c(so,:,:,:,:,:,:,:,:,:) , this_output, soidx, 'Un',0);
+                % Use cellfun to perform the following operation within each
+                % cell, but only if all cells are not empty:
+                % For each class 1 sample, we count how many class 2 exemplars
+                % have a lower decision value than this sample. If there is a
+                % tie (dvals equal for two exemplars of different classes),
+                % we add 0.5. Dividing that number by the #class 1 x #class 2
+                % (n1*n2) gives the AUC.
+                % We do this by applying the above-defined arrsum to every cell
+                % in model_output and then normalising by (n1*n2)
+                perf(dim_skip_token{:},xx) = cellfun(@(c,n1,n2) arrsum(c,n1)/(n1*n2), cf_so, N1,N2, 'Un',0);
+            end
         end
         
     case 'confusion'
@@ -211,20 +216,23 @@ switch(metric)
             perf(dim_skip_token{:},1) = cellfun( @(cfo,lab) nanmean(cfo(lab==1,:,:,:,:,:,:,:,:,:),1), model_output, y, 'Un',0);
             perf(dim_skip_token{:},2) = cellfun( @(cfo,lab) nanmean(cfo(lab==2,:,:,:,:,:,:,:,:,:),1), model_output, y, 'Un',0);
         else
-            for xx=1:nextra % Looping across the extra dimensions if model_output is multi-dimensional
-                tmp1 = cellfun( @(cfo,lab) nanmean(cfo(lab==1,:,:,:,:,:,:,:,:,:),1), model_output(dim_skip_token{:},xx), y, 'Un',0);
-                tmp2 = cellfun( @(cfo,lab) nanmean(cfo(lab==2,:,:,:,:,:,:,:,:,:),1), model_output(dim_skip_token{:},xx), y, 'Un',0);
-                % if one of the class labels is not found, a scalar nan is
-                % returned but eg in time data a vector of nans is necessary
-                for ix = 1:numel(tmp1)
-                    if isscalar(tmp1{ix}) && isnan(tmp1{ix})
-                        tmp1{ix} = nan(size(tmp2{ix}));
-                    elseif isscalar(tmp2{ix}) && isnan(tmp2{ix})
-                        tmp2{ix} = nan(size(tmp1{ix}));
+            for xx=1:nextra % Looping across the extra dimensions if model_output is multi-dimensional, but only if the contents are non-empty
+                this_output = model_output(dim_skip_token{:},xx);
+                if ~any(cellfun(@isempty, this_output))
+                    tmp1 = cellfun( @(cfo,lab) nanmean(cfo(lab==1,:,:,:,:,:,:,:,:,:),1), this_output, y, 'Un',0);
+                    tmp2 = cellfun( @(cfo,lab) nanmean(cfo(lab==2,:,:,:,:,:,:,:,:,:),1), this_output, y, 'Un',0);
+                    % if one of the class labels is not found, a scalar nan is
+                    % returned but eg in time data a vector of nans is necessary
+                    for ix = 1:numel(tmp1)
+                        if isscalar(tmp1{ix}) && isnan(tmp1{ix})
+                            tmp1{ix} = nan(size(tmp2{ix}));
+                        elseif isscalar(tmp2{ix}) && isnan(tmp2{ix})
+                            tmp2{ix} = nan(size(tmp1{ix}));
+                        end
                     end
+                    perf(dim_skip_token{:},xx) = tmp1;
+                    perf(dim_skip_token{:},xx+nextra) = tmp2;
                 end
-                perf(dim_skip_token{:},xx) = tmp1;
-                perf(dim_skip_token{:},xx+nextra) = tmp2;
             end
         end
         
@@ -295,20 +303,23 @@ switch(metric)
             % T-value
             perf = cellfun( @(m1,m2,n1,n2,sp) (m1-m2)./(sp.*sqrt(1/n1 + 1/n2)) , M1,M2,N1,N2,SP,'Un',0);
         else
-            for xx=1:nextra % Looping across the extra dimensions if model_output is multi-dimensional
-                % Get means
-                M1 = cellfun( @(cfo,lab) nanmean(cfo(lab==1,:,:,:,:,:,:,:,:,:),1), model_output(dim_skip_token{:},xx), y, 'Un',0);
-                M2 = cellfun( @(cfo,lab) nanmean(cfo(lab==2,:,:,:,:,:,:,:,:,:),1), model_output(dim_skip_token{:},xx), y, 'Un',0);
-                % Variances
-                V1 = cellfun( @(cfo,lab) nanvar(cfo(lab==1,:,:,:,:,:,:,:,:,:)), model_output(dim_skip_token{:},xx), y, 'Un',0);
-                V2 = cellfun( @(cfo,lab) nanvar(cfo(lab==2,:,:,:,:,:,:,:,:,:)), model_output(dim_skip_token{:},xx), y, 'Un',0);
-                % Class frequencies
-                N1 = cellfun( @(lab) sum(lab==1), y, 'Un',0);
-                N2 = cellfun( @(lab) sum(lab==2), y, 'Un',0);
-                % Pooled standard deviation
-                SP = cellfun( @(v1,v2,n1,n2) sqrt( ((n1-1)*v1 + (n2-1)*v2) / (n1+n2-2)  ), V1,V2,N1,N2, 'Un',0);
-                % T-value
-                perf(dim_skip_token{:},xx) = cellfun( @(m1,m2,n1,n2,sp) (m1-m2)./(sp.*sqrt(1/n1 + 1/n2)) , M1,M2,N1,N2,SP,'Un',0);
+            for xx=1:nextra % Looping across the extra dimensions if model_output is multi-dimensional,, but only if the contents are non-empty
+                this_output = model_output(dim_skip_token{:},xx);
+                if ~any(cellfun(@isempty, this_output))
+                    % Get means
+                    M1 = cellfun( @(cfo,lab) nanmean(cfo(lab==1,:,:,:,:,:,:,:,:,:),1), this_output, y, 'Un',0);
+                    M2 = cellfun( @(cfo,lab) nanmean(cfo(lab==2,:,:,:,:,:,:,:,:,:),1), this_output, y, 'Un',0);
+                    % Variances
+                    V1 = cellfun( @(cfo,lab) nanvar(cfo(lab==1,:,:,:,:,:,:,:,:,:)), this_output, y, 'Un',0);
+                    V2 = cellfun( @(cfo,lab) nanvar(cfo(lab==2,:,:,:,:,:,:,:,:,:)), this_output, y, 'Un',0);
+                    % Class frequencies
+                    N1 = cellfun( @(lab) sum(lab==1), y, 'Un',0);
+                    N2 = cellfun( @(lab) sum(lab==2), y, 'Un',0);
+                    % Pooled standard deviation
+                    SP = cellfun( @(v1,v2,n1,n2) sqrt( ((n1-1)*v1 + (n2-1)*v2) / (n1+n2-2)  ), V1,V2,N1,N2, 'Un',0);
+                    % T-value
+                    perf(dim_skip_token{:},xx) = cellfun( @(m1,m2,n1,n2,sp) (m1-m2)./(sp.*sqrt(1/n1 + 1/n2)) , M1,M2,N1,N2,SP,'Un',0);
+                end
             end
         end
         
@@ -326,19 +337,28 @@ switch(metric)
     case {'mse', 'mean_squared_error'}
         %%% ---------- mean squared error ---------
         for xx=1:nextra
-            perf(dim_skip_token{:},xx) = cellfun( @(ypred,ytrue) mean( bsxfun(@minus, ypred, ytrue).^2, 1 ), model_output(dim_skip_token{:},xx), y, 'Un', 0);
+            this_output = model_output(dim_skip_token{:},xx);
+            if ~any(cellfun(@isempty, this_output))
+                perf(dim_skip_token{:},xx) = cellfun( @(ypred,ytrue) mean( bsxfun(@minus, ypred, ytrue).^2, 1 ), this_output, y, 'Un', 0);
+            end
         end
 
     case {'mae', 'mean_absolute_error'}
         %%% ---------- mean absolute error ---------
         for xx=1:nextra
-            perf(dim_skip_token{:},xx) = cellfun( @(ypred,ytrue) mean( abs(bsxfun(@minus, ypred, ytrue)), 1), model_output(dim_skip_token{:},xx), y, 'Un', 0);
+            this_output = model_output(dim_skip_token{:},xx);
+            if ~any(cellfun(@isempty, this_output))
+                perf(dim_skip_token{:},xx) = cellfun( @(ypred,ytrue) mean( abs(bsxfun(@minus, ypred, ytrue)), 1), this_output, y, 'Un', 0);
+            end
         end
 
     case {'r_squared'}
         %%% ---------- R-squared: fraction variance explained ---------
         for xx=1:nextra
-            perf(dim_skip_token{:},xx) = cellfun( @(ypred,ytrue) 1 - bsxfun(@rdivide, var(bsxfun(@minus, ypred, ytrue)), var(ytrue)) , model_output(dim_skip_token{:},xx), y, 'Un', 0);
+            this_output = model_output(dim_skip_token{:},xx);
+            if ~any(cellfun(@isempty, this_output))
+                perf(dim_skip_token{:},xx) = cellfun( @(ypred,ytrue) 1 - bsxfun(@rdivide, var(bsxfun(@minus, ypred, ytrue)), var(ytrue)) , this_output, y, 'Un', 0);
+            end
         end
         
     otherwise, error('Unknown metric: %s', metric)
@@ -346,8 +366,11 @@ end
 
 % Convert cell array to matrix. Since each cell can also contain a multi-
 % dimensional array instead of a scalar, we need to make sure that these
-% arrays are correctly appended as extra dimensions.
-nd = sum(size(perf{1})>1); % Number of non-singleton dimensions
+% arrays are correctly appended as extra dimensions (in the cell2mat conversion below).
+nd = 0;
+for ii=1:numel(perf)
+  nd = max(nd, sum(size(perf{ii})>1)); % Number of non-singleton dimensions, loop is needed because not all elements of perf may be filled with data
+end
 % nd = find(size(perf{1})>1,1,'last'); % Number of non-singleton dimensions
 if nd>0
     % There is extra non-singleton dimensions within the cells. To cope with this, we
@@ -358,6 +381,9 @@ if nd>0
     dimSkip1 = repmat({1},[1, ndims(perf)]);
     innerCellSkip = repmat({':'},[1, nd]);
     for ii=1:numel(perf)
+        if isempty(perf{ii})
+            continue;
+        end
         tmp = [];
         tmp(dimSkip1{:},innerCellSkip{:}) = perf{ii};
         perf{ii} = tmp;
@@ -475,42 +501,47 @@ if isvector(perf_std), perf_std = perf_std(:); end
         
         % Looping across the extra dimensions if model_output is multi-dimensional
         for xx=1:nextra
-            % Use cellfun to apply the function defined above to each cell
-            tmp = cellfun(confusion_fun, y, new_model_output(dim_skip_token{:},xx), 'Un', 0);
+            % Use cellfun to apply the function defined above to each cell,
+            % but only if all cells are non-empty
+            this_output = new_model_output(dim_skip_token{:},xx);
+            if ~any(cellfun(@isempty, this_output))
             
-            % We're almost done. We just need to transform the cell
-            % matrices contained in each cell of tmp into ordinary
-            % matrices. However, with multi-dimensional outputs (such as 
-            % in mv_classify_timextime) we need to make sure that the 
-            % resulting matrix has the correct dimensions, i.e.
-            % [nclasses x nclasses x ...]
-            tmp = cellfun( @(c) cellfun( @(x) reshape(x,1,1,[]), c,'Un',0), tmp, 'Un',0);
+                tmp = cellfun(confusion_fun, y, this_output, 'Un', 0);
             
-            % Now we're ready to transform each cell of tmp into a matrix 
-            tmp = cellfun( @cell2mat, tmp, 'Un',0);
-            
-            if normalize 
-                % confusion_fun gives us the absolute counts 
-                % for each combination of classes. 
-                % It is useful to normalize the confusion matrix such that the
-                % cells represent proportions instead of absolute counts. To 
-                % this end, each row is divided by the number of
-                % samples in that row. As a result every row sums to 1.
-                nor = cellfun( @(lab) 1./repmat(sum(lab,2), [1,nclasses]), tmp, 'Un',0);
-                tmp = cellfun( @(lab,nor) lab .* nor, tmp, nor, 'Un', 0);
+                % We're almost done. We just need to transform the cell
+                % matrices contained in each cell of tmp into ordinary
+                % matrices. However, with multi-dimensional outputs (such as
+                % in mv_classify_timextime) we need to make sure that the
+                % resulting matrix has the correct dimensions, i.e.
+                % [nclasses x nclasses x ...]
+                tmp = cellfun( @(c) cellfun( @(x) reshape(x,1,1,[]), c,'Un',0), tmp, 'Un',0);
 
-                % We get a pathological situation when one fold does not 
-                % contain any trials of a particular class (nor gets Inf). It's
-                % unclear how to deal with this situation because averaging
-                % the confusion matrix across folds does not make so much sense 
-                % any more. A perhaps reasonable fix is to set this column to
-                % 0. 
-                for c=1:numel(tmp)
-                    tmp{c}(isinf(tmp{c})) = 0;
+                % Now we're ready to transform each cell of tmp into a matrix
+                tmp = cellfun( @cell2mat, tmp, 'Un',0);
+
+                if normalize
+                    % confusion_fun gives us the absolute counts
+                    % for each combination of classes.
+                    % It is useful to normalize the confusion matrix such that the
+                    % cells represent proportions instead of absolute counts. To
+                    % this end, each row is divided by the number of
+                    % samples in that row. As a result every row sums to 1.
+                    nor = cellfun( @(lab) 1./repmat(sum(lab,2), [1,nclasses]), tmp, 'Un',0);
+                    tmp = cellfun( @(lab,nor) lab .* nor, tmp, nor, 'Un', 0);
+
+                    % We get a pathological situation when one fold does not
+                    % contain any trials of a particular class (nor gets Inf). It's
+                    % unclear how to deal with this situation because averaging
+                    % the confusion matrix across folds does not make so much sense
+                    % any more. A perhaps reasonable fix is to set this column to
+                    % 0.
+                    for c=1:numel(tmp)
+                        tmp{c}(isinf(tmp{c})) = 0;
+                    end
                 end
-            end
 
-            conf(dim_skip_token{:},xx) = tmp;
+                conf(dim_skip_token{:},xx) = tmp;
+            end
         end
     end
 
@@ -519,7 +550,10 @@ if isvector(perf_std), perf_std = perf_std(:); end
         if nclasses==2
             % for two classes we use the standard formula TP / (TP + FP)
             for xx=1:nextra % Looping across the extra dimensions if model_output is multi-dimensional
-                precision(dim_skip_token{:},xx) = cellfun( @(c) c(1,1,:,:,:,:,:,:)./(c(1,1,:,:,:,:,:,:)+c(2,1,:,:,:,:,:,:)), conf(dim_skip_token{:},xx), 'Un',0);
+                this_conf = conf(dim_skip_token{:},xx);
+                if ~any(cellfun(@isempty, this_conf))
+                    precision(dim_skip_token{:},xx) = cellfun( @(c) c(1,1,:,:,:,:,:,:)./(c(1,1,:,:,:,:,:,:)+c(2,1,:,:,:,:,:,:)), this_conf, 'Un',0);
+                end
             end
         else
             % for more than two classes, we use the generalisation from
@@ -529,15 +563,18 @@ if isvector(perf_std), perf_std = perf_std(:); end
                 % a nested arrayfun is needed for eg timextime
                 % classification when the cell contents are
                 % multi-dimensional too
-                if ismatrix(conf{1,1,xx})
-                    precision(dim_skip_token{:},xx) = cellfun( @(c) diag(c)./sum(c,1)', conf(dim_skip_token{:},xx), 'Un',0);
-                else
-                    % the content is a [classes x nclasses x ...]
-                    % multidimensional array, so we need to iterate
-                    % across the last dimension using a nested arrayfun
-                    % and a nested cell2mat to convert it back to a
-                    % matrix
-                    precision(dim_skip_token{:},xx) = cellfun( @(c) cell2mat(arrayfun(@(ix) diag(c(:,:,ix))./sum(c(:,:,ix),1)', 1:(numel(c)/nclasses/nclasses),'Un',0)), conf(dim_skip_token{:},xx), 'Un',0);
+                this_conf = conf(dim_skip_token{:},xx);
+                if ~any(cellfun(@isempty, this_conf))
+                    if ismatrix(this_conf{1,1,1})
+                        precision(dim_skip_token{:},xx) = cellfun( @(c) diag(c)./sum(c,1)', this_conf, 'Un',0);
+                    else
+                        % the content is a [classes x nclasses x ...]
+                        % multidimensional array, so we need to iterate
+                        % across the last dimension using a nested arrayfun
+                        % and a nested cell2mat to convert it back to a
+                        % matrix
+                        precision(dim_skip_token{:},xx) = cellfun( @(c) cell2mat(arrayfun(@(ix) diag(c(:,:,ix))./sum(c(:,:,ix),1)', 1:(numel(c)/nclasses/nclasses),'Un',0)), this_conf, 'Un',0);
+                    end
                 end
             end
         end
@@ -549,22 +586,28 @@ if isvector(perf_std), perf_std = perf_std(:); end
         if nclasses==2
             % for two classes we use the standard formula TP / (TP + FN)
             for xx=1:nextra % Looping across the extra dimensions if model_output is multi-dimensional
-                recall(dim_skip_token{:},xx) = cellfun( @(c) c(1,1,:,:,:,:,:,:)./(c(1,1,:,:,:,:,:,:)+c(1,2,:,:,:,:,:,:)), conf(dim_skip_token{:},xx), 'Un',0);
+                this_conf = conf(dim_skip_token{:},xx);
+                if ~any(cellfun(@isempty, this_conf))
+                    recall(dim_skip_token{:},xx) = cellfun( @(c) c(1,1,:,:,:,:,:,:)./(c(1,1,:,:,:,:,:,:)+c(1,2,:,:,:,:,:,:)), this_conf, 'Un',0);
+                end
             end
         else
             % for more than two classes, we use the generalisation from
             % Sokolava and Lapalme (2009) recall_i = c_ii / (sum_j c_ij) 
             % where c_ij = (i,j)-th entry of the unnormalized confusion matrix
             for xx=1:nextra % Looping across the extra dimensions if model_output is multi-dimensional
-                if ismatrix(conf{1,1,xx})
-                    recall(dim_skip_token{:},xx) = cellfun( @(c) diag(c)./sum(c,2), conf(dim_skip_token{:},xx), 'Un',0);
-                else
-                    % the content is a [classes x nclasses x ...]
-                    % multidimensional array, so we need to iterate
-                    % across the last dimension using a nested arrayfun
-                    % and a nested cell2mat to convert it back to a
-                    % matrix
-                    recall(dim_skip_token{:},xx) = cellfun( @(c) cell2mat(arrayfun(@(ix) diag(c(:,:,ix))./sum(c(:,:,ix),2), 1:(numel(c)/nclasses/nclasses),'Un',0)), conf(dim_skip_token{:},xx), 'Un',0);
+                this_conf = conf(dim_skip_token{:},xx);
+                if ~any(cellfun(@isempty, this_conf))
+                    if ismatrix(this_conf{1,1,1})
+                        recall(dim_skip_token{:},xx) = cellfun( @(c) diag(c)./sum(c,2), this_conf, 'Un',0);
+                    else
+                        % the content is a [classes x nclasses x ...]
+                        % multidimensional array, so we need to iterate
+                        % across the last dimension using a nested arrayfun
+                        % and a nested cell2mat to convert it back to a
+                        % matrix
+                        recall(dim_skip_token{:},xx) = cellfun( @(c) cell2mat(arrayfun(@(ix) diag(c(:,:,ix))./sum(c(:,:,ix),2), 1:(numel(c)/nclasses/nclasses),'Un',0)), this_conf, 'Un',0);
+                    end
                 end
             end
         end
