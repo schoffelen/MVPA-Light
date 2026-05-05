@@ -171,7 +171,8 @@ if strcmp(param.reg, 'logf')
     
     % Stack labels in diagonal matrix for matrix multiplication during
     % optimisation
-    Y = diag(clabel);
+    Y = spdiags(clabel,0,numel(clabel),numel(clabel));
+    % Y = diag(clabel);
     
     % Adjust N for the additional samples
     N = numel(clabel);
@@ -202,7 +203,8 @@ if strcmp(param.reg, 'l2')
     
     % Stack labels in diagonal matrix for matrix multiplication during
     % optimisation
-    Y = diag(clabel);
+    Y = spdiags(clabel,0,numel(clabel),numel(clabel));
+    %Y = diag(clabel);
     
     %%% Searchgrid for lambda
     if ischar(param.lambda) && strcmp(param.lambda,'auto')
