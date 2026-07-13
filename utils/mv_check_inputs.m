@@ -12,6 +12,13 @@ n_metrics = numel(cfg.metric);
 has_second_dataset = (nargin > 3) && ~isempty(X2) && ~isempty(clabel2);
 if ~has_second_dataset, clabel2 = []; end
 
+%% cfg: given a metric, set default for output_type
+if any(ismember({'dval','auc','roc','tval'},cfg.metric))
+    mv_set_default(cfg,'output_type','dval');
+else
+    mv_set_default(cfg,'output_type','clabel');
+end
+
 %% Deprecation checks
 if isfield(cfg,'param') && (~isfield(cfg,'hyperparameter') || isempty(cfg.hyperparameter))
     warning('cfg.param has been renamed to cfg.hyperparameter, changing cfg accordingly..');
@@ -85,13 +92,6 @@ if isfield(cfg,'hyperparameter') && isstruct(cfg.hyperparameter)
     if any(not_lowercase)
         error('For consistency, all parameters must be given in lowercase: please replace hyperparameter.%s by hyperparameter.%s', pfn{not_lowercase(1)},lower(pfn{not_lowercase(1)}) )
     end
-end
-
-%% cfg: given a metric, set default for output_type
-if any(ismember({'dval','auc','roc','tval'},cfg.metric))
-    mv_set_default(cfg,'output_type','dval');
-else
-    mv_set_default(cfg,'output_type','clabel');
 end
 
 %% cfg: check whether number of classes and metric are compatible (eg 'auc' does not work for more than 2 classes)
