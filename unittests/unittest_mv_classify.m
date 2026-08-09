@@ -543,6 +543,17 @@ cfg.cv = 'none';
 [~, result] = mv_classify(cfg, X, clabel);
 print_unittest_result('[save=model_param, trainlabel, no crossval] misc.result.model_param', [1, 1, ntime], size(result.model_param), tol);
 
+%% save: test for field 'preprocess_param'
+cfg.preprocess = 'zscore';
+cfg.save = {'preprocess_param'};
+[~, result] = mv_classify(cfg, X, clabel);
+print_unittest_result('[save=preprocess_param] preprocess', true, isfield(result,'preprocess_param'), tol);
+
+cfg.preprocess = {'zscore', 'undersample'};
+cfg.save = {'trainlabel' 'model_param', 'preprocess_param'};
+[~, result] = mv_classify(cfg, X, clabel);
+print_unittest_result('[save=trainlabel,model_param,preprocess_param] preprocess', true, isfield(result,'trainlabel')&&isfield(result,'model_param')&&isfield(result,'preprocess_param'), tol);
+
 %% ~isempty(gendim) + hasneighbours
 nsamples = 100;
 ntime = 60;
