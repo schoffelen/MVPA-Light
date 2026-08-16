@@ -167,6 +167,23 @@ switch(model)
         mv_set_default(param,'lambda_y','auto');
         mv_set_default(param,'form', 'auto');
 
-
-    otherwise, error('Unknown model ''%s''',model)
+ 
+  otherwise
+        % check for the existence of a triplet of functions:
+        %   train_<model>
+        %   test_<model>
+        %   params_<model>
+        % if these conditions are met then it may be something that has
+        % been developed at home, let's give it a shot
+        if exist(sprintf('train_%s', model), 'file') == 2 && ...
+           exist(sprintf('test_%s', model), 'file') ==2 && ...
+           exist(sprintf('params_%s', model), 'file') == 2
+          try
+            param = feval(sprintf('params_%s', model), param);
+          catch
+            error('Failed to get default parameters for model %s', model);
+          end
+        else
+           error('Unknown model ''%s''',model)
+        end
 end

@@ -319,8 +319,9 @@ if isempty(nfeat), nfeat = 1; end
 
 %% prepare save
 if ~iscell(cfg.save), cfg.save = {cfg.save}; end
-save_model = any(strcmp(cfg.save, 'model_param'));
-save_trainlabel = any(strcmp(cfg.save, 'trainlabel'));
+save_model        = any(strcmp(cfg.save, 'model_param'));
+save_trainlabel   = any(strcmp(cfg.save, 'trainlabel'));
+save_pparam       = any(strcmp(cfg.save, 'preprocess_param'));
 
 %% Perform classification
 if ~strcmp(cfg.cv,'none') && ~has_second_dataset
@@ -335,7 +336,8 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
     end
     testlabel = cell([cfg.repeat, cfg.k]);
     if save_trainlabel, all_trainlabel = cell([cfg.repeat, cfg.k]); end
-    if save_model, all_model = cell(size(cf_output)); end
+    if save_model,      all_model      = cell(size(cf_output));     end
+    if save_pparam,     all_pparam     = cell([cfg.repeat, cfg.k]); end
 
     for rr=1:cfg.repeat                 % ---- CV repetitions ----
         if cfg.feedback, fprintf('Repetition #%d. Fold ',rr), end
@@ -361,7 +363,8 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
                 % cfg.preprocess_param.X_foo becomes X_foo_train and X_foo_test 
                 % Preprocess train data
                 [tmp_cfg, Xtrain, trainlabel] = mv_preprocess(cfg, Xtrain, trainlabel);
-                
+                if save_pparam, all_pparam{rr, kk} = tmp_cfg.preprocess_param; end
+
                 % Preprocess test data
                 [~, Xtest, testlabel{rr,kk}] = mv_preprocess(tmp_cfg, Xtest, testlabel{rr,kk});
             end
@@ -487,6 +490,7 @@ elseif has_second_dataset
 
     % Preprocess train data
     [tmp_cfg, X, clabel] = mv_preprocess(cfg, X, clabel);
+    if save_pparam, all_pparam = tmp_cfg.preprocess_param; end
     
     % Preprocess test data
     [~, X2, clabel2] = mv_preprocess(tmp_cfg, X2, clabel2);
@@ -598,7 +602,8 @@ elseif strcmp(cfg.cv,'none')
     
     % Preprocess train/test data
     if ~isempty(cfg.preprocess)
-        [~, X, clabel] = mv_preprocess(cfg, X, clabel);
+        [tmp_cfg, X, clabel] = mv_preprocess(cfg, X, clabel);
+        if save_pparam, all_pparam = tmp_cfg.preprocess_param; end
     end
     
     % Initialize classifier outputs
@@ -758,6 +763,7 @@ if nargout>1
    result.n_classes             = n_classes;
    result.classifier            = cfg.classifier;
    result.cfg                   = cfg;
-   if save_trainlabel, result.trainlabel = all_trainlabel; end
-   if save_model, result.model_param = all_model; end
+   if save_trainlabel, result.trainlabel  = all_trainlabel; end
+   if save_model,      result.model_param = all_model;      end
+   if save_pparam,     result.preprocess_param = all_pparam;   end
 end

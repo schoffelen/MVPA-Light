@@ -106,6 +106,7 @@ test_fun = eval(['@test_' cfg.classifier]);
 if ~iscell(cfg.save), cfg.save = {cfg.save}; end
 save_model = any(strcmp(cfg.save, 'model_param'));
 save_trainlabel = any(strcmp(cfg.save, 'trainlabel'));
+save_pparam = any(strcmp(cfg.save, 'preprocess_param'));
 
 %% Classify across time
 if cfg.feedback, mv_print_classification_info(cfg, X, clabel, varargin{:}); end
@@ -117,6 +118,7 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
     testlabel = cell(cfg.repeat, cfg.k);
     if save_trainlabel, all_trainlabel = cell([cfg.repeat, cfg.k]); end
     if save_model, all_model = cell(size(cf_output)); end
+    if save_pparam, all_pparam = cell([cfg.repeat, cfg.k]); end
 
     for rr=1:cfg.repeat                 % ---- CV repetitions ----
         if cfg.feedback, fprintf('Repetition #%d. Fold ',rr), end
@@ -137,7 +139,8 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
             if ~isempty(cfg.preprocess)
                 % Preprocess train data
                 [tmp_cfg, Xtrain, trainlabel] = mv_preprocess(cfg, Xtrain, trainlabel);
-                
+                if save_pparam, all_pparam{rr,kk} = tmp_cfg.preprocess_param; end
+
                 % Preprocess test data
                 [~, Xtest, testlabel{rr,kk}] = mv_preprocess(tmp_cfg, Xtest, testlabel{rr,kk});
             end
@@ -175,10 +178,11 @@ elseif has_second_dataset
 
     % Preprocess train data
     [tmp_cfg, X, clabel] = mv_preprocess(cfg, X, clabel);
-    
+    if save_pparam, all_pparam = tmp_cfg.preprocess_param; end
+
     % Preprocess test data
     [~, X2, clabel2] = mv_preprocess(tmp_cfg, X2, clabel2);
-    
+
     for tt=1:ntime          % ---- Train and test time ----
         % Train and test data
         Xtrain= squeeze(X(:,:,cfg.time(tt)));
@@ -207,7 +211,8 @@ else
     if save_model, all_model = cell(size(cf_output)); end
 
     % Preprocess train/test data
-    [~, X, clabel] = mv_preprocess(cfg, X, clabel);
+    [tmp_cfg, X, clabel] = mv_preprocess(cfg, X, clabel);
+    if save_pparam, all_pparam = tmp_cfg.preprocess_param; end
 
     for tt=1:ntime          % ---- Train and test time ----
         % Train and test data
@@ -271,4 +276,5 @@ if nargout>1
    result.cfg                   = cfg;
    if save_trainlabel, result.trainlabel = all_trainlabel; end
    if save_model, result.model_param = all_model; end
+   if save_pparam, result.preprocess_param = all_pparam; end
 end
