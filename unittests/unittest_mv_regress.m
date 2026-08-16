@@ -327,28 +327,64 @@ cfg.repeat = 2;
 cfg.k = 5;
 cfg.feedback = 0;
 cfg.save = {};
-[~, result] = mv_regress(cfg, X, clabel);
+[~, result] = mv_regress(cfg, X, y);
 
 print_unittest_result('[save={}] no y_train or model_param in result', true, (~isfield(result,'y_train'))&&(~isfield(result,'model_param')), tol);
 
 cfg.save = {'y_train'};
-[~, result] = mv_regress(cfg, X, clabel);
+[~, result] = mv_regress(cfg, X, y);
 print_unittest_result('[save=y_train] y_train present', true, isfield(result,'y_train'), tol);
 print_unittest_result('[save=y_train] model_param not present', false, isfield(result,'model_param'), tol);
 
 cfg.save = {'y_train' 'model_param'};
-[~, result] = mv_regress(cfg, X, clabel);
+[~, result] = mv_regress(cfg, X, y);
 print_unittest_result('[save=y_train,model_param] y_train and model_param', true, isfield(result,'y_train')&&isfield(result,'model_param'), tol);
 
 % add time dimension: now result.misc.model_param should have an extra dimension
 X = randn(nsamples, nfeatures, ntime);
 cfg.save = 'model_param';
-[~, result] = mv_regress(cfg, X, clabel);
+[~, result] = mv_regress(cfg, X, y);
 print_unittest_result('[save=model_param] misc.result.model_param for 3D data', [cfg.repeat, cfg.k, ntime], size(result.model_param), tol);
 
 % no cross val
 cfg.save = {'model_param' 'y_train'};
 cfg.cv = 'none';
-[~, result] = mv_regress(cfg, X, clabel);
+[~, result] = mv_regress(cfg, X, y);
 print_unittest_result('[save=model_param, y_train, no crossval] misc.result.model_param', [1, 1, ntime], size(result.model_param), tol);
+
+%% save: test for field 'preprocess_param'
+cfg = [];
+cfg.repeat = 2;
+cfg.k = 5;
+cfg.feedback = 0;
+
+cfg.preprocess = 'zscore';
+cfg.save = {'preprocess_param'};
+[~, result] = mv_regress(cfg, X, y);
+print_unittest_result('[save=preprocess_param, kfold] preprocess_param present', true, isfield(result,'preprocess_param'), tol);
+print_unittest_result('[save=preprocess_param, kfold] preprocess_param has size [repeat x k]', [cfg.repeat, cfg.k], size(result.preprocess_param), tol);
+print_unittest_result('[save=preprocess_param, kfold] fitted zscore mean differs across folds', true, any(result.preprocess_param{1,1}{1}.mean(:) ~= result.preprocess_param{1,2}{1}.mean(:)), tol);
+
+cfg.preprocess = {'zscore', 'demean'};
+cfg.save = {'y_train' 'model_param', 'preprocess_param'};
+[~, result] = mv_regress(cfg, X, y);
+print_unittest_result('[save=y_train,model_param,preprocess_param, kfold] all three fields present', true, isfield(result,'y_train')&&isfield(result,'model_param')&&isfield(result,'preprocess_param'), tol);
+
+% no cross-validation
+cfg.preprocess = 'zscore';
+cfg.save = {'preprocess_param'};
+cfg.cv = 'none';
+[~, result] = mv_regress(cfg, X, y);
+print_unittest_result('[save=preprocess_param, cv=none] preprocess_param present', true, isfield(result,'preprocess_param'), tol);
+print_unittest_result('[save=preprocess_param, cv=none] preprocess_param is fitted param cell (not wrapped per-fold)', true, isfield(result.preprocess_param{1},'mean'), tol);
+cfg.cv = 'kfold';
+
+% transfer regression (second dataset): preprocessing should be fit on
+% the train set X only
+X2 = randn(size(X)) * 10 + 5;
+y2 = y;
+cfg.save = {'preprocess_param'};
+[~, result] = mv_regress(cfg, X, y, X2, y2);
+print_unittest_result('[save=preprocess_param, transfer] preprocess_param present', true, isfield(result,'preprocess_param'), tol);
+print_unittest_result('[save=preprocess_param, transfer] preprocess_param reflects train-set (X) fit, not test-set (X2)', mean(X(:)), mean(result.preprocess_param{1}.mean(:)), 1e-6);
 

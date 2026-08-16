@@ -283,6 +283,7 @@ if isempty(nfeat), nfeat = 1; end
 if ~iscell(cfg.save), cfg.save = {cfg.save}; end
 save_model = any(strcmp(cfg.save, 'model_param'));
 save_y_train = any(strcmp(cfg.save, 'y_train'));
+save_pparam = any(strcmp(cfg.save, 'preprocess_param'));
 
 %% Perform regression
 if ~strcmp(cfg.cv,'none') && ~has_second_dataset
@@ -294,6 +295,7 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
     y_test = cell([cfg.repeat, cfg.k]);
     if save_y_train, all_y_train = cell([cfg.repeat, cfg.k]); end
     if save_model, all_model = cell(size(model_output)); end
+    if save_pparam, all_pparam = cell([cfg.repeat, cfg.k]); end
     
     for rr=1:cfg.repeat                 % ---- CV repetitions ----
         if cfg.feedback, fprintf('Repetition #%d. Fold ',rr), end
@@ -315,7 +317,8 @@ if ~strcmp(cfg.cv,'none') && ~has_second_dataset
             if ~isempty(cfg.preprocess)
                 % Preprocess train data
                 [tmp_cfg, X_train, y_train] = mv_preprocess(cfg, X_train, y_train);
-                
+                if save_pparam, all_pparam{rr,kk} = tmp_cfg.preprocess_param; end
+
                 % Preprocess test data
                 [~, X_test, y_test{rr,kk}] = mv_preprocess(tmp_cfg, X_test, y_test{rr,kk});
             end
@@ -399,7 +402,8 @@ elseif has_second_dataset
 
     % Preprocess train data
     [tmp_cfg, X, Y] = mv_preprocess(cfg, X, Y);
-    
+    if save_pparam, all_pparam = tmp_cfg.preprocess_param; end
+
     % Preprocess test data
     [~, X2, Y2] = mv_preprocess(tmp_cfg, X2, Y2);
     
@@ -465,7 +469,8 @@ elseif strcmp(cfg.cv,'none')
     
     % Preprocess train/test data
     if ~isempty(cfg.preprocess)
-        [~, X, Y] = mv_preprocess(cfg, X, Y);
+        [tmp_cfg, X, Y] = mv_preprocess(cfg, X, Y);
+        if save_pparam, all_pparam = tmp_cfg.preprocess_param; end
     end
     
     % Initialise regression model outputs
@@ -574,4 +579,5 @@ if nargout>1
    result.cfg                   = cfg;
    if save_y_train, result.y_train = all_y_train; end
    if save_model, result.model_param = all_model; end
+   if save_pparam, result.preprocess_param = all_pparam; end
 end

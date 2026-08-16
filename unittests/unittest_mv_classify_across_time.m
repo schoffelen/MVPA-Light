@@ -237,3 +237,39 @@ cfg.cv = 'none';
 [~, result] = mv_classify_across_time(cfg, X, clabel);
 print_unittest_result('[save=model_param, trainlabel, no crossval] misc.result.model_param', [1, 1, ntime], size(result.model_param), tol);
 
+%% save: test for field 'preprocess_param'
+cfg = [];
+cfg.repeat = 2;
+cfg.k = 5;
+cfg.feedback = 0;
+
+cfg.preprocess = 'zscore';
+cfg.save = {'preprocess_param'};
+[~, result] = mv_classify_across_time(cfg, X, clabel);
+print_unittest_result('[save=preprocess_param, kfold] preprocess_param present', true, isfield(result,'preprocess_param'), tol);
+print_unittest_result('[save=preprocess_param, kfold] preprocess_param has size [repeat x k]', [cfg.repeat, cfg.k], size(result.preprocess_param), tol);
+print_unittest_result('[save=preprocess_param, kfold] fitted zscore mean differs across folds', true, any(result.preprocess_param{1,1}{1}.mean(:) ~= result.preprocess_param{1,2}{1}.mean(:)), tol);
+
+cfg.preprocess = {'zscore', 'demean'};
+cfg.save = {'trainlabel' 'model_param', 'preprocess_param'};
+[~, result] = mv_classify_across_time(cfg, X, clabel);
+print_unittest_result('[save=trainlabel,model_param,preprocess_param, kfold] all three fields present', true, isfield(result,'trainlabel')&&isfield(result,'model_param')&&isfield(result,'preprocess_param'), tol);
+
+% no cross-validation
+cfg.preprocess = 'zscore';
+cfg.save = {'preprocess_param'};
+cfg.cv = 'none';
+[~, result] = mv_classify_across_time(cfg, X, clabel);
+print_unittest_result('[save=preprocess_param, cv=none] preprocess_param present', true, isfield(result,'preprocess_param'), tol);
+print_unittest_result('[save=preprocess_param, cv=none] preprocess_param is fitted param cell (not wrapped per-fold)', true, isfield(result.preprocess_param{1},'mean'), tol);
+cfg.cv = 'kfold';
+
+% transfer classification (second dataset): preprocessing should be fit on
+% the train set X only
+X2 = randn(size(X)) * 10 + 5;
+clabel2 = clabel;
+cfg.save = {'preprocess_param'};
+[~, result] = mv_classify_across_time(cfg, X, clabel, X2, clabel2);
+print_unittest_result('[save=preprocess_param, transfer] preprocess_param present', true, isfield(result,'preprocess_param'), tol);
+print_unittest_result('[save=preprocess_param, transfer] preprocess_param reflects train-set (X) fit, not test-set (X2)', mean(X(:)), mean(result.preprocess_param{1}.mean(:)), 1e-6);
+
