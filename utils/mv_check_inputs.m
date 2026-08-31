@@ -36,13 +36,10 @@ if strcmp(cfg.output_type,'prob')
     end
 end
 
-%% cfg: set defaults for classifier hyperparameter
+%% cfg.hyperparameter: set default for relabel_design, then check
 cfg.hyperparameter = mv_get_hyperparameter(cfg.classifier, cfg.hyperparameter);
-if isfield(cfg.hyperparameter, 'relabel_design') && ~cfg.hyperparameter.relabel_design
-    relabelflag = false;
-else
-    relabelflag = true;
-end
+mv_set_default(cfg.hyperparameter, 'relabel_design', true);
+relabelflag = cfg.hyperparameter.relabel_design;
 
 %% clabel: check class labels and relabel
 clabel = clabel(:);
